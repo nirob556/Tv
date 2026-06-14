@@ -412,7 +412,7 @@ ADMIN_HTML = """
             fetch('/admin/api/users').then(res => res.json()).then(data => {
                 document.getElementById('user-count').innerText = data.count;
                 let tbody = document.getElementById('user-table-body'); tbody.innerHTML = '';
-                for (let ip in data.users) { tbody.innerHTML += `<tr><td>\`${ip}\`</td><td><span class="badge">${data.users[ip].channel}</span></td></tr>`; }
+                for (let ip in data.users) { tbody.innerHTML += `<tr><td>\( {ip}</td><td><span class="badge"> \){data.users[ip].channel}</span></td></tr>`; }
             });
         }, 3000);
     </script>
