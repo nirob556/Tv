@@ -38,7 +38,7 @@ def init_db():
     ''')
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('site_name', 'SPEED X FIFA World Cup live match 2026')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('tg_channel', 'SPEED_X_CHANNELS')")
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'admin123')") # অ্যাডমিন পাসওয়ার্ড ব্যাকএন্ডে থাকবে
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'admin123')") 
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('site_status', 'ON')") 
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('bg_url', '#03030a')") 
     conn.commit()
@@ -60,11 +60,6 @@ def send_telegram_alert(text):
     try:
         if ADMIN_ID:
             requests.post(url, json={"chat_id": ADMIN_ID, "text": text, "parse_mode": "Markdown"})
-        else:
-            updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
-            if updates.get("result"):
-                chat_id = updates["result"][-1]["message"]["chat"]["id"]
-                requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
     except Exception as e:
         print(f"Telegram Error: {e}")
 
@@ -87,9 +82,9 @@ BASE_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Streaming Platform</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video-js.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         * { box-sizing: border-box; margin:0; padding:0; }
         body {
@@ -98,7 +93,6 @@ BASE_HTML = """
             background-size: 35px 35px; overflow-x: hidden;
         }
         
-        /* Anti-VPN Overlay Lock Box */
         #vpn-blockscreen {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: #04040c; z-index: 1000000; justify-content: center; align-items: center; text-align: center; padding: 20px;
@@ -117,19 +111,17 @@ BASE_HTML = """
         .tg-lock { background: rgba(8,8,20,0.95); border: 2px solid #ff0055; padding: 30px 15px; border-radius: 12px; margin: 20px auto; max-width: 400px; box-shadow: 0 0 25px rgba(255,0,85,0.3); }
         .btn-tg { display: inline-block; background: #0088cc; color: #fff; padding: 10px 22px; border-radius: 25px; text-decoration: none; font-weight: bold; margin-top: 15px; box-shadow: 0 0 12px #0088cc; }
         
-        /* FIXED COMPACT VIDEO PLAYER FRAME */
         .video-wrapper { max-width: 580px; margin: 0 auto 15px; position: relative; }
         .player-header { display: flex; justify-content: space-between; align-items: center; background: #080816; border: 1px solid rgba(0,255,204,0.3); border-bottom: none; padding: 6px 12px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
         .close-stream-btn { background: rgba(255, 0, 85, 0.15); border: 1px solid #ff0055; color: #ff0055; padding: 3px 10px; border-radius: 50px; cursor: pointer; font-weight: bold; text-decoration: none; font-size: 0.85rem; transition: 0.3s; }
         .close-stream-btn:hover { background: #ff0055; color: #fff; box-shadow: 0 0 8px #ff0055; }
         
-        .video-box { background: #000; border: 2px solid #00ffcc; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; padding: 2px; box-shadow: 0 0 20px rgba(0,255,204,0.25); position: relative; overflow: hidden; width: 100%; max-height: 320px; }
-        .video-js { width: 100% !important; height: 230px !important; border-radius: 6px; }
-        @media(min-width: 600px) { .video-js { height: 310px !important; } }
+        .video-box { background: #000; border: 2px solid #00ffcc; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; padding: 2px; box-shadow: 0 0 20px rgba(0,255,204,0.25); position: relative; overflow: hidden; width: 100%; }
+        video { width: 100% !important; height: 230px !important; border-radius: 6px; background: #000; }
+        @media(min-width: 600px) { video { height: 310px !important; } }
         
         .video-watermark { position: absolute; top: 12px; right: 12px; z-index: 10; font-family: 'Audiowide'; font-size: 0.7rem; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(0,255,204,0.3); color: #00ffcc; pointer-events: none; }
 
-        /* REACTION & FEEDBACK BOX */
         .feedback-box { max-width: 580px; margin: 15px auto; background: #0a0a1f; border: 1px solid rgba(255,0,85,0.2); padding: 12px; border-radius: 10px; text-align: left; }
         .stars { display: flex; gap: 8px; margin: 6px 0; }
         .stars i { font-size: 1.3rem; color: #444; cursor: pointer; transition: 0.2s; }
@@ -138,7 +130,6 @@ BASE_HTML = """
         .submit-review-btn { background: #00ffcc; color: #000; font-weight: bold; padding: 6px 15px; border: none; border-radius: 4px; margin-top: 6px; cursor: pointer; font-family: 'Rajdhani'; transition: 0.3s; width: 100%; font-size:0.95rem; }
         .submit-review-btn:hover { box-shadow: 0 0 10px #00ffcc; }
 
-        /* GRID SYSTEM */
         .channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; justify-content: center; margin-top: 15px; }
         .channel-card { background: #070716; border: 1px solid rgba(0,255,204,0.12); border-radius: 10px; padding: 12px; cursor: pointer; transition: 0.3s; text-decoration: none; color: #fff; display: block;}
         .channel-card:hover { border-color: #ff0055; transform: translateY(-3px); box-shadow: 0 4px 12px rgba(255,0,85,0.2); }
@@ -193,9 +184,7 @@ BASE_HTML = """
             </div>
             <div class="video-box">
                 <div class="video-watermark">SPEED_X SECURE</div>
-                <video id="vip-player" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto" data-setup='{}'>
-                    <source src="/stream/{{ current_channel_id }}" type="application/x-mpegURL">
-                </video>
+                <video id="vip-player" controls autoplay muted playsinline></video>
             </div>
         </div>
 
@@ -239,7 +228,6 @@ BASE_HTML = """
         </footer>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video.min.js"></script>
     <script>
         // --- REAL-TIME NO REFRESH ANTI-VPN LOGIC ---
         function runAntiVPNDetection() {
@@ -273,7 +261,7 @@ BASE_HTML = """
         }
 
         runAntiVPNDetection();
-        setInterval(runAntiVPNDetection, 2000); // প্রতি ২ সেকেন্ডে নো-রিফ্রেশ অটো-চেক লুপ
+        setInterval(runAntiVPNDetection, 2000);
 
         // --- FEEDBACK SYSTEM ---
         let selectedRating = 5;
@@ -303,7 +291,47 @@ BASE_HTML = """
             setTimeout(function() { window.location.href = "{{ url_for('bypass_tg') }}"; }, 2000);
         }
 
+        // --- HLS STREAM ENGINE INITIALIZATION ---
         {% if current_channel_id %}
+        document.addEventListener("DOMContentLoaded", function() {
+            const video = document.getElementById('vip-player');
+            // Stream source dynamically masked from endpoint secure routing token layer
+            const streamUrl = '/stream/{{ current_channel_id }}'; 
+
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    maxPixelRatio: Array.isArray(window.devicePixelRatio) ? window.devicePixelRatio : 1,
+                    autoStartLoad: true,
+                    maxBufferLength: 10
+                });
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    video.play().catch(e => console.log("Autoplay blocked, waiting for interaction"));
+                });
+                
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play();
+                });
+            }
+        });
+
         window.onload = function () {
             if (window.history && window.history.pushState) {
                 window.history.pushState('forward', null, './');
@@ -412,7 +440,7 @@ ADMIN_HTML = """
             fetch('/admin/api/users').then(res => res.json()).then(data => {
                 document.getElementById('user-count').innerText = data.count;
                 let tbody = document.getElementById('user-table-body'); tbody.innerHTML = '';
-                for (let ip in data.users) { tbody.innerHTML += `<tr><td>\( {ip}</td><td><span class="badge"> \){data.users[ip].channel}</span></td></tr>`; }
+                for (let ip in data.users) { tbody.innerHTML += `<tr><td>${ip}</td><td><span class="badge">${data.users[ip].channel}</span></td></tr>`; }
             });
         }, 3000);
     </script>
@@ -438,7 +466,7 @@ def home():
     
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, '', logo FROM channels") # এইচটিএমএল সোর্সে এপিআই লিংক পাঠানো সম্পূর্ণ বন্ধ
+    cursor.execute("SELECT id, name, '', logo FROM channels") 
     channels = cursor.fetchall()
     conn.close()
     
@@ -455,8 +483,7 @@ def home():
         site_name=get_setting('site_name'), tg_channel=get_setting('tg_channel'), bg_url=get_setting('bg_url')
     )
 
-# ⭐ Anti-Crack API Masking Engine (Reverse Proxy Route)
-# এই রুটটি ব্রাউজার থেকে আসল এপিআই লিংক লুকিয়ে ফেলে ডাটা রিভার্স করে প্লেয়ারে পাঠায়
+# ⭐ Dynamic Tokenized Routing Layer
 @app.route('/stream/<int:channel_id>')
 def stream_proxy(channel_id):
     if not session.get('tg_joined'):
@@ -473,10 +500,18 @@ def stream_proxy(channel_id):
         
     actual_api_url = row[0]
     
-    # পাইথন ব্যাকএন্ড নিজে আসল এপিআই কল করবে, ব্রাউজার বা ইউজার লিংক দেখতে পারবে না
+    # Render API proxy buffer streaming fix 
     try:
-        req = requests.get(actual_api_url, stream=True, timeout=5)
-        return Response(req.iter_content(chunk_size=1024), content_type=req.headers.get('Content-Type'))
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        req = requests.get(actual_api_url, stream=True, headers=headers, timeout=8)
+        
+        # Proper generator pattern chunk loading pass to avoid Render memory limits
+        def generate():
+            for chunk in req.iter_content(chunk_size=4096):
+                if chunk:
+                    yield chunk
+                    
+        return Response(generate(), content_type=req.headers.get('Content-Type', 'application/x-mpegURL'))
     except Exception as e:
         return f"Stream Initialization Error: {e}", 500
 
