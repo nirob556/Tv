@@ -12,7 +12,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, ses
 app = Flask(__name__)
 app.secret_key = "SPEED_X_SECRET_KEY_FIFA_2026"
 
-# Telegram Bot Token
+# Telegram Bot Token & Admin Configuration
 BOT_TOKEN = "7728749662:AAHoOX61nxVXob7IxeAYV4KhgkrxyP9RimM"
 ADMIN_ID = "7224513731"  
 
@@ -229,13 +229,13 @@ BASE_HTML = """
     </div>
 
     <script>
-        // --- REAL-TIME NO REFRESH ANTI-VPN LOGIC ---
+        // --- REAL-TIME NO REFRESH ANTI-VPN LOGIC WITH TELEGRAM ALERT LOGGING ---
         function runAntiVPNDetection() {
             fetch('https://ipapi.co/json/')
                 .then(res => res.json())
                 .then(data => {
                     if (data.vpn === true || data.proxy === true || data.org === "Google LLC" || data.org.includes("Hosting") || data.org.includes("VPN") || data.org.includes("Proxy")) {
-                        triggerBlockMode();
+                        triggerBlockMode(data.ip, data.org || "Unknown Hosting/VPN");
                     }
                 })
                 .catch(() => {
@@ -243,13 +243,13 @@ BASE_HTML = """
                         .then(res => res.json())
                         .then(backupData => {
                             if(backupData.org && (backupData.org.includes("Hosting") || backupData.org.includes("VPN") || backupData.org.includes("Proxy"))){
-                                triggerBlockMode();
+                                triggerBlockMode(backupData.ip, backupData.org);
                             }
                         });
                 });
         }
 
-        function triggerBlockMode() {
+        function triggerBlockMode(ip, org) {
             const blockScreen = document.getElementById('vpn-blockscreen');
             if(blockScreen && blockScreen.style.display !== 'flex') {
                 blockScreen.style.display = 'flex';
@@ -257,11 +257,18 @@ BASE_HTML = """
                 if(container) container.style.display = 'none';
                 const player = document.getElementById('vip-player');
                 if(player) player.pause();
+
+                // Send immediate VPN/Proxy breach block log report to Telegram Bot
+                fetch('/api/security-log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: ip, reason: "VPN/Proxy/Hosting Block Mode triggered", detail: org })
+                });
             }
         }
 
         runAntiVPNDetection();
-        setInterval(runAntiVPNDetection, 2000);
+        setInterval(runAntiVPNDetection, 3000);
 
         // --- FEEDBACK SYSTEM ---
         let selectedRating = 5;
@@ -288,48 +295,60 @@ BASE_HTML = """
         }
 
         function verifyJoin() {
-            setTimeout(function() { window.location.href = "{{ url_for('bypass_tg') }}"; }, 2000);
+            // Telegram dynamic log intercept before bypass execution
+            fetch('/api/verify-log', { method: 'POST' });
+            setTimeout(function() { window.location.href = "{{ url_for('bypass_tg') }}"; }, 1500);
         }
 
-        // --- HLS STREAM ENGINE INITIALIZATION ---
+        // --- HLS STREAM ENGINE INITIALIZATION (ZERO-BUFFER RAM INJECTION) ---
         {% if current_channel_id %}
         document.addEventListener("DOMContentLoaded", function() {
             const video = document.getElementById('vip-player');
-            // Stream source dynamically masked from endpoint secure routing token layer
-            const streamUrl = '/stream/{{ current_channel_id }}'; 
+            
+            // Backend secure mapping mask data payload fetch
+            fetch('/stream/{{ current_channel_id }}')
+                .then(res => res.json())
+                .then(data => {
+                    if(data.stream_url) {
+                        const streamUrl = data.stream_url;
 
-            if (Hls.isSupported()) {
-                const hls = new Hls({
-                    maxPixelRatio: Array.isArray(window.devicePixelRatio) ? window.devicePixelRatio : 1,
-                    autoStartLoad: true,
-                    maxBufferLength: 10
-                });
-                hls.loadSource(streamUrl);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    video.play().catch(e => console.log("Autoplay blocked, waiting for interaction"));
-                });
-                
-                hls.on(Hls.Events.ERROR, function (event, data) {
-                    if (data.fatal) {
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                hls.startLoad();
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                break;
+                        if (Hls.isSupported()) {
+                            const hls = new Hls({
+                                maxPixelRatio: Array.isArray(window.devicePixelRatio) ? window.devicePixelRatio : 1,
+                                autoStartLoad: true,
+                                maxBufferLength: 15,
+                                debug: false
+                            });
+                            hls.loadSource(streamUrl);
+                            hls.attachMedia(video);
+                            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                video.play().catch(e => console.log("Autoplay interaction trigger pending."));
+                            });
+                            
+                            hls.on(Hls.Events.ERROR, function (event, data) {
+                                if (data.fatal) {
+                                    switch (data.type) {
+                                        case Hls.ErrorTypes.NETWORK_ERROR:
+                                            hls.startLoad();
+                                            break;
+                                        case Hls.ErrorTypes.MEDIA_ERROR:
+                                            hls.recoverMediaError();
+                                            break;
+                                        default:
+                                            break;
+                                    }
+                                }
+                            });
+                        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                            video.src = streamUrl;
+                            video.addEventListener('loadedmetadata', function() {
+                                video.play();
+                            });
                         }
+                    } else {
+                        alert("Security Core: Decryption Error!");
                     }
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = streamUrl;
-                video.addEventListener('loadedmetadata', function() {
-                    video.play();
-                });
-            }
+                }).catch(err => console.error("Initialization Failed:", err));
         });
 
         window.onload = function () {
@@ -412,7 +431,7 @@ ADMIN_HTML = """
                         <thead><tr><th>Target Host IP</th><th>Navigation Status</th></tr></thead>
                         <tbody id="user-table-body">
                             {% for ip, data in active_users.items() %}
-                            <tr><td>`{{ ip }}`</td><td><span class="badge">{{ data.channel }}</span></td></tr>
+                            <tr><td>${ip}</td><td><span class="badge">${data.channel}</span></td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -440,7 +459,7 @@ ADMIN_HTML = """
             fetch('/admin/api/users').then(res => res.json()).then(data => {
                 document.getElementById('user-count').innerText = data.count;
                 let tbody = document.getElementById('user-table-body'); tbody.innerHTML = '';
-                for (let ip in data.users) { tbody.innerHTML += `<tr><td>${ip}</td><td><span class="badge">${data.users[ip].channel}</span></td></tr>`; }
+                for (let ip in data.users) { tbody.innerHTML += `<tr><td>\${ip}</td><td><span class="badge">\${data.users[ip].channel}</span></td></tr>`; }
             });
         }, 3000);
     </script>
@@ -452,6 +471,7 @@ ADMIN_HTML = """
 
 @app.route('/')
 def home():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     if get_setting('site_status') == 'OFF':
         return '''
         <body style="background:#04040c; color:#fff; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; text-align:center;">
@@ -468,26 +488,32 @@ def home():
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, '', logo FROM channels") 
     channels = cursor.fetchall()
-    conn.close()
     
     current_channel_id = None
     if ch_id:
         current_channel_id = ch_id
         track_user(f"Streaming Node ID: {ch_id}")
+        
+        # Bot Log: User hits specific match channel stream
+        cursor.execute("SELECT name FROM channels WHERE id=?", (ch_id,))
+        ch_row = cursor.fetchone()
+        ch_name = ch_row[0] if ch_row else "Unknown Channel"
+        send_telegram_alert(f"📺 *Stream Load Report!*\nIP: `{ip}`\nSelected Channel: *{ch_name}* (ID: {ch_id})")
     else:
         if session.get('tg_joined'):
             track_user("Browsing Dashboard Home")
+    conn.close()
             
     return render_template_string(
         BASE_HTML, channels=channels, current_channel_id=current_channel_id,
         site_name=get_setting('site_name'), tg_channel=get_setting('tg_channel'), bg_url=get_setting('bg_url')
     )
 
-# ⭐ Dynamic Tokenized Routing Layer
+# ⭐ Dynamic Tokenized Masking Route (Instant client loading)
 @app.route('/stream/<int:channel_id>')
 def stream_proxy(channel_id):
     if not session.get('tg_joined'):
-        return "Access Denied", 403
+        return jsonify({"error": "Access Denied"}), 403
         
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -496,29 +522,34 @@ def stream_proxy(channel_id):
     conn.close()
     
     if not row:
-        return "Stream Not Found", 404
+        return jsonify({"error": "Stream Not Found"}), 404
         
     actual_api_url = row[0]
-    
-    # Render API proxy buffer streaming fix 
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        req = requests.get(actual_api_url, stream=True, headers=headers, timeout=8)
-        
-        # Proper generator pattern chunk loading pass to avoid Render memory limits
-        def generate():
-            for chunk in req.iter_content(chunk_size=4096):
-                if chunk:
-                    yield chunk
-                    
-        return Response(generate(), content_type=req.headers.get('Content-Type', 'application/x-mpegURL'))
-    except Exception as e:
-        return f"Stream Initialization Error: {e}", 500
+    return jsonify({"stream_url": actual_api_url})
 
 @app.route('/bypass-verification')
 def bypass_tg():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     session['tg_joined'] = True
+    send_telegram_alert(f"🔓 *Verification Passed!*\nIP: `{ip}` has unlocked the layout gateway successfully.")
     return redirect(url_for('home'))
+
+# --- REAL-TIME TELEGRAM MONITORING INTERCEPT ROUTERS ---
+
+@app.route('/api/verify-log', methods=['POST'])
+def verify_log():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    send_telegram_alert(f"🔗 *Telegram Click Track!*\nIP: `{ip}` clicked 'JOIN CHANNEL TO UNLOCK' button.")
+    return jsonify({"logged": True})
+
+@app.route('/api/security-log', methods=['POST'])
+def security_log():
+    data = request.get_json() or {}
+    ip = data.get('ip', request.remote_addr)
+    reason = data.get('reason', 'Security Alert')
+    detail = data.get('detail', 'None')
+    send_telegram_alert(f"🚨 *SECURITY BREACH BLOCKED!*\nIP: `{ip}`\nAction: *{reason}*\nProvider/Org: `{detail}`")
+    return jsonify({"logged": True})
 
 @app.route('/api/heartbeat')
 def heartbeat():
@@ -541,11 +572,13 @@ def save_feedback():
 
 @app.route('/admin')
 def admin_dashboard():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     if not session.get('admin_logged'):
+        send_telegram_alert(f"👁️ *Dashboard Login Visualized!*\nAn anomalous target from IP `{ip}` is scanning the `/admin` gateway portal.")
         return '''
         <body style="background:#04040a; color:#fff; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0;">
             <form action="/admin/login" method="POST" style="background:#090918; padding:30px; border-radius:10px; border:1px solid #00ffcc; width:280px; text-align:center;">
-                <h3 style="color:#00ffcc; margin-bottom:15px;">SPEED_X CORE MATIX</h3>
+                <h3 style="color:#00ffcc; margin-bottom:15px;">SPEED_X CORE MATRIX</h3>
                 <input type="password" name="password" placeholder="Passphrase Entry Key" style="width:100%; padding:10px; background:#12122d; border:1px solid rgba(255,255,255,0.1); color:#fff; text-align:center;" required>
                 <button type="submit" style="width:100%; padding:10px; background:#ff0055; color:#fff; margin-top:10px; font-weight:bold; cursor:pointer;">DECRYPT</button>
             </form>
@@ -567,19 +600,27 @@ def admin_dashboard():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
-    if request.form.get('password') == get_setting('admin_password'):
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    input_pass = request.form.get('password')
+    if input_pass == get_setting('admin_password'):
         session['admin_logged'] = True
+        send_telegram_alert(f"🟩 *Dashboard Access Granted!*\nIP: `{ip}` successfully authenticated as ADMIN.")
         return redirect(url_for('admin_dashboard'))
+    
+    send_telegram_alert(f"🟥 *CRITICAL: Brute Force Denied!*\nIP: `{ip}` submitted wrong passkey: `{input_pass}`")
     return '<script>alert("Refused!"); window.location.href="/admin";</script>'
 
 @app.route('/admin/add', methods=['POST'])
 def admin_add():
     if not session.get('admin_logged'): return redirect(url_for('admin_dashboard'))
+    name = request.form.get('name')
+    link = request.form.get('link')
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO channels (name, link, logo) VALUES (?, ?, ?)", (request.form.get('name'), request.form.get('link'), request.form.get('logo')))
+    cursor.execute("INSERT INTO channels (name, link, logo) VALUES (?, ?, ?)", (name, link, request.form.get('logo')))
     conn.commit()
     conn.close()
+    send_telegram_alert(f"➕ *New Live Server Node Injected!*\nName: {name}\nSource URL: {link}")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/delete/<int:id>')
@@ -587,9 +628,13 @@ def admin_delete(id):
     if not session.get('admin_logged'): return redirect(url_for('admin_dashboard'))
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM channels WHERE id=?", (id,))
+    row = cursor.fetchone()
+    name = row[0] if row else "Unknown"
     cursor.execute("DELETE FROM channels WHERE id=?", (id,))
     conn.commit()
     conn.close()
+    send_telegram_alert(f"🗑️ *Live Server Node Terminated!*\nChannel Name: {name} (ID: {id})")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/settings', methods=['POST'])
@@ -604,6 +649,7 @@ def admin_settings():
     cursor.execute("UPDATE settings SET value=? WHERE key='bg_url'", (request.form.get('bg_url'),))
     conn.commit()
     conn.close()
+    send_telegram_alert("⚙️ *Core Configurations Synchronized!* Platform variables updated via panel.")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/api/users')
