@@ -7,7 +7,7 @@
 import sqlite3
 import time
 import requests
-from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify, Response
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 
 app = Flask(__name__)
 app.secret_key = "SPEED_X_SECRET_KEY_FIFA_2026"
@@ -22,6 +22,7 @@ active_users = {}
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
+    # Live streaming channels structure
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,12 +31,23 @@ def init_db():
             logo TEXT
         )
     ''')
+    # Settings store
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         )
     ''')
+    # IP Ban System Architecture
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS banned_ips (
+            ip TEXT PRIMARY KEY,
+            ban_until REAL,
+            reason TEXT
+        )
+    ''')
+    
+    # Insert default settings if they do not exist
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('site_name', 'SPEED X FIFA World Cup live match 2026')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('tg_channel', 'SPEED_X_CHANNELS')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', 'admin123')") 
@@ -62,6 +74,33 @@ def send_telegram_alert(text):
             requests.post(url, json={"chat_id": ADMIN_ID, "text": text, "parse_mode": "Markdown"})
     except Exception as e:
         print(f"Telegram Error: {e}")
+
+def is_ip_banned(ip):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT ban_until FROM banned_ips WHERE ip=?", (ip,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        ban_until = row[0]
+        if time.time() < ban_until:
+            return True, ban_until
+    return False, 0
+
+def ban_user_ip(ip, duration_seconds=300, reason="VPN/Proxy Policy Violation"):
+    ban_until = time.time() + duration_seconds
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO banned_ips (ip, ban_until, reason) VALUES (?, ?, ?)", (ip, ban_until, reason))
+    conn.commit()
+    conn.close()
+
+def unban_user_ip(ip):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM banned_ips WHERE ip=?", (ip,))
+    conn.commit()
+    conn.close()
 
 def track_user(action="Home"):
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -147,10 +186,10 @@ BASE_HTML = """
     <div id="vpn-blockscreen">
         <div class="vpn-box">
             <i class="fas fa-shield-virus" style="font-size: 55px; color: #ff0055; margin-bottom: 15px;"></i>
-            <h2 style="color: #ff0055; letter-spacing: 1px; font-size: 1.5rem; margin-bottom: 10px;">VPN PROHIBITED!</h2>
+            <h2 style="color: #ff0055; letter-spacing: 1px; font-size: 1.5rem; margin-bottom: 10px;">VPN DETECTED & BANNED!</h2>
             <p style="color: #fff; font-size: 1.1rem; line-height: 1.5; font-family:'Rajdhani'; font-weight:bold;">
                 SECURITY DETECTED A PROXY/VPN CONNECTION.<br>
-                <span style="color:#00ffcc;">PLEASE DISCONNECT YOUR VPN</span> TO RESTORE ACCESS TO THE LIVE STREAM.
+                <span style="color:#00ffcc;">YOUR IP IS BANNED FOR 5 MINUTES.</span> DISCONNECT VPN AND TRY LATER.
             </p>
         </div>
     </div>
@@ -163,7 +202,7 @@ BASE_HTML = """
 
     <div class="container">
         <header>
-            <div class="live-badge"><i class="fa-solid fa-bolt"></i> VIP SECURE CORE v4.0</div>
+            <div class="live-badge"><i class="fa-solid fa-bolt"></i> VIP SECURE CORE v5.0</div>
             <h1>{{ site_name }}</h1>
         </header>
 
@@ -229,13 +268,13 @@ BASE_HTML = """
     </div>
 
     <script>
-        // --- REAL-TIME NO REFRESH ANTI-VPN LOGIC WITH TELEGRAM ALERT LOGGING ---
+        // High-Speed Instant Anti-VPN Protection Matrix
         function runAntiVPNDetection() {
             fetch('https://ipapi.co/json/')
                 .then(res => res.json())
                 .then(data => {
                     if (data.vpn === true || data.proxy === true || data.org === "Google LLC" || data.org.includes("Hosting") || data.org.includes("VPN") || data.org.includes("Proxy")) {
-                        triggerBlockMode(data.ip, data.org || "Unknown Hosting/VPN");
+                        triggerInstantBan(data.ip, data.org || "Unknown Shielded Node");
                     }
                 })
                 .catch(() => {
@@ -243,32 +282,33 @@ BASE_HTML = """
                         .then(res => res.json())
                         .then(backupData => {
                             if(backupData.org && (backupData.org.includes("Hosting") || backupData.org.includes("VPN") || backupData.org.includes("Proxy"))){
-                                triggerBlockMode(backupData.ip, backupData.org);
+                                triggerInstantBan(backupData.ip, backupData.org);
                             }
                         });
                 });
         }
 
-        function triggerBlockMode(ip, org) {
-            const blockScreen = document.getElementById('vpn-blockscreen');
-            if(blockScreen && blockScreen.style.display !== 'flex') {
-                blockScreen.style.display = 'flex';
-                const container = document.querySelector('.container');
-                if(container) container.style.display = 'none';
-                const player = document.getElementById('vip-player');
-                if(player) player.pause();
-
-                // Send immediate VPN/Proxy breach block log report to Telegram Bot
-                fetch('/api/security-log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip: ip, reason: "VPN/Proxy/Hosting Block Mode triggered", detail: org })
-                });
-            }
+        function triggerInstantBan(ip, org) {
+            fetch('/api/security-auto-ban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip: ip, detail: org })
+            }).then(() => {
+                document.getElementById('vpn-blockscreen').style.display = 'flex';
+                if(document.querySelector('.container')) document.querySelector('.container').style.display = 'none';
+                if(document.getElementById('vip-player')) document.getElementById('vip-player').pause();
+            });
         }
 
         runAntiVPNDetection();
-        setInterval(runAntiVPNDetection, 3000);
+        setInterval(runAntiVPNDetection, 2500);
+
+        // Visibility Change Monitor (Detect Minimizing and Opening VPN)
+        document.addEventListener("visibilitychange", function() {
+            if (document.visibilityState === 'visible') {
+                runAntiVPNDetection();
+            }
+        });
 
         // --- FEEDBACK SYSTEM ---
         let selectedRating = 5;
@@ -295,23 +335,18 @@ BASE_HTML = """
         }
 
         function verifyJoin() {
-            // Telegram dynamic log intercept before bypass execution
             fetch('/api/verify-log', { method: 'POST' });
             setTimeout(function() { window.location.href = "{{ url_for('bypass_tg') }}"; }, 1500);
         }
 
-        // --- HLS STREAM ENGINE INITIALIZATION (ZERO-BUFFER RAM INJECTION) ---
         {% if current_channel_id %}
         document.addEventListener("DOMContentLoaded", function() {
             const video = document.getElementById('vip-player');
-            
-            // Backend secure mapping mask data payload fetch
             fetch('/stream/{{ current_channel_id }}')
                 .then(res => res.json())
                 .then(data => {
                     if(data.stream_url) {
                         const streamUrl = data.stream_url;
-
                         if (Hls.isSupported()) {
                             const hls = new Hls({
                                 maxPixelRatio: Array.isArray(window.devicePixelRatio) ? window.devicePixelRatio : 1,
@@ -322,41 +357,15 @@ BASE_HTML = """
                             hls.loadSource(streamUrl);
                             hls.attachMedia(video);
                             hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                                video.play().catch(e => console.log("Autoplay interaction trigger pending."));
-                            });
-                            
-                            hls.on(Hls.Events.ERROR, function (event, data) {
-                                if (data.fatal) {
-                                    switch (data.type) {
-                                        case Hls.ErrorTypes.NETWORK_ERROR:
-                                            hls.startLoad();
-                                            break;
-                                        case Hls.ErrorTypes.MEDIA_ERROR:
-                                            hls.recoverMediaError();
-                                            break;
-                                        default:
-                                            break;
-                                    }
-                                }
+                                video.play().catch(e => console.log("Autoplay context waiting."));
                             });
                         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                             video.src = streamUrl;
-                            video.addEventListener('loadedmetadata', function() {
-                                video.play();
-                            });
+                            video.addEventListener('loadedmetadata', function() { video.play(); });
                         }
-                    } else {
-                        alert("Security Core: Decryption Error!");
                     }
-                }).catch(err => console.error("Initialization Failed:", err));
+                });
         });
-
-        window.onload = function () {
-            if (window.history && window.history.pushState) {
-                window.history.pushState('forward', null, './');
-                window.onpopstate = function () { window.location.href = "{{ url_for('home') }}"; };
-            }
-        }
         {% endif %}
 
         setInterval(function() {
@@ -377,8 +386,8 @@ ADMIN_HTML = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background: #06060f; color: #fff; font-family: 'Rajdhani', sans-serif; padding: 25px; }
-        .grid { display: grid; grid-template-columns: 1fr 1.8fr; gap: 25px; }
-        .box { background: #0c0c1f; border: 1px solid #00ffcc; padding: 18px; border-radius: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; }
+        .box { background: #0c0c1f; border: 1px solid #00ffcc; padding: 18px; border-radius: 10px; margin-bottom: 20px; }
         h2 { margin-bottom: 12px; color: #00ffcc; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; font-size:1.2rem;}
         input, select, button { width: 100%; padding: 8px; margin-bottom: 10px; background: #13132e; border: 1px solid rgba(255,255,255,0.08); color: #fff; border-radius: 5px; font-weight: bold; font-family:'Rajdhani';}
         button { background: #ff0055; border: none; cursor: pointer; transition: 0.2s;}
@@ -393,7 +402,7 @@ ADMIN_HTML = """
     <h1 style="color: #ff0055; margin-bottom: 15px;"><i class="fa-solid fa-terminal"></i> NIROB BBZ CONTROL INFRASTRUCTURE</h1>
     <div class="grid">
         <div>
-            <div class="box" style="margin-bottom: 15px;">
+            <div class="box">
                 <h2>Add Streaming Node</h2>
                 <form action="{{ url_for('admin_add') }}" method="POST">
                     <input type="text" name="name" placeholder="Channel Title Name" required>
@@ -403,40 +412,67 @@ ADMIN_HTML = """
                 </form>
             </div>
             <div class="box">
+                <h2>IP Firewall Controls</h2>
+                <form action="{{ url_for('admin_manual_ban') }}" method="POST" style="margin-bottom: 15px;">
+                    <input type="text" name="ip" placeholder="Target IP to Restrict" required>
+                    <input type="number" name="duration" placeholder="Duration (Seconds) e.g. 300" required>
+                    <button type="submit" style="background: #ff0055;"><i class="fa-solid fa-ban"></i> EXECUTE FIREWALL BAN</button>
+                </form>
+                <form action="{{ url_for('admin_manual_unban') }}" method="POST">
+                    <input type="text" name="ip" placeholder="Target IP to Release" required>
+                    <button type="submit" style="background: #00ffcc; color: #000;"><i class="fa-solid fa-key"></i> FIREWALL RELEASE UNBAN</button>
+                </form>
+            </div>
+            <div class="box">
                 <h2>Dynamic Site Configurations</h2>
                 <form action="{{ url_for('admin_settings') }}" method="POST">
-                    <label>Platform App Name</label>
                     <input type="text" name="site_name" value="{{ site_name }}" required>
-                    <label>Telegram Channel Lock</label>
                     <input type="text" name="tg_channel" value="{{ tg_channel }}" required>
-                    <label>Dashboard Gate Key (Password)</label>
                     <input type="password" name="admin_password" value="{{ admin_password }}" required>
-                    <label>Global UI Background</label>
                     <input type="text" name="bg_url" value="{{ bg_url }}" required>
-                    <label>System Switch Status</label>
                     <select name="site_status">
                         <option value="ON" {% if site_status == 'ON' %}selected{% endif %}>🟢 SYSTEM ONLINE WORKING</option>
                         <option value="OFF" {% if site_status == 'OFF' %}selected{% endif %}>🔴 SYSTEM MAINTENANCE DISABLE</option>
                     </select>
                     <button type="submit" style="background:#00ffcc; color:#000;"><i class="fa-solid fa-microchip"></i> RECORD NEW CONFIGS</button>
                 </form>
-                <a href="{{ url_for('logout') }}" style="color:#ff0055; text-decoration:none; font-weight:bold; display:block; text-align:center; margin-top:5px;">TERMINATE SESSION</a>
+                <a href="{{ url_for('logout') }}" style="color:#ff0055; text-decoration:none; font-weight:bold; display:block; text-align:center;">TERMINATE SESSION</a>
             </div>
         </div>
+        
         <div>
-            <div class="box" style="margin-bottom: 15px; background: #110d1c; border-color: #ff0055;">
+            <div class="box" style="background: #110d1c; border-color: #ff0055;">
                 <h2><i class="fa-solid fa-users"></i> Live Watchers (<span id="user-count">{{ active_count }}</span>)</h2>
-                <div style="max-height: 140px; overflow-y: auto;">
+                <div style="max-height: 180px; overflow-y: auto;">
                     <table>
                         <thead><tr><th>Target Host IP</th><th>Navigation Status</th></tr></thead>
                         <tbody id="user-table-body">
                             {% for ip, data in active_users.items() %}
-                            <tr><td>${ip}</td><td><span class="badge">${data.channel}</span></td></tr>
+                            <tr><td>{{ ip }}</td><td><span class="badge">{{ data.channel }}</span></td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             </div>
+            
+            <div class="box" style="border-color: #ffcc00;">
+                <h2><i class="fa-solid fa-user-shield"></i> Active Firewall Restrictions</h2>
+                <div style="max-height: 180px; overflow-y: auto;">
+                    <table>
+                        <thead><tr><th>Banned IP Address</th><th>Time Remaining</th><th>Reason</th></tr></thead>
+                        <tbody>
+                            {% for record in banned_list %}
+                            <tr>
+                                <td>{{ record[0] }}</td>
+                                <td><span style="color:#ff0055; font-weight:bold;">{{ record[1] }}s left</span></td>
+                                <td>{{ record[2] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="box">
                 <h2>Active Servers Operational Database</h2>
                 <table>
@@ -469,6 +505,25 @@ ADMIN_HTML = """
 
 # --- ROUTING SYSTEMS LOGIC (BACKEND PROTECTION MATRIX) ---
 
+@app.before_request
+def check_firewall_status():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    # Exclude admin and api log routes from immediate blocking loops to prevent framework crash
+    if not request.path.startswith('/admin') and not request.path.startswith('/api/security-auto-ban'):
+        banned, ban_until = is_ip_banned(ip)
+        if banned:
+            remaining = int(ban_until - time.time())
+            return f'''
+            <body style="background:#04040c; color:#fff; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; text-align:center;">
+                <div style="border:2px solid #ff0055; padding:40px; border-radius:12px; box-shadow:0 0 30px rgba(255,0,85,0.4); max-width:450px;">
+                    <i class="fas fa-user-slash" style="font-size:55px; color:#ff0055; margin-bottom:15px;"></i>
+                    <h2 style="color:#ff0055; letter-spacing:1px; margin-bottom:10px;">FIREWALL BLOCK ACCESS DOCK</h2>
+                    <p style="color:#fff; line-height:1.6; font-weight:bold;">YOUR MACHINE IP [`{ip}`] IS CURRENTLY BANNED.</p>
+                    <p style="color:#00ffcc; font-size:1.2rem; font-weight:bold;">Cooldown Lockdown: {remaining} Seconds Left</p>
+                </div>
+            </body>
+            ''', 403
+
 @app.route('/')
 def home():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -494,7 +549,6 @@ def home():
         current_channel_id = ch_id
         track_user(f"Streaming Node ID: {ch_id}")
         
-        # Bot Log: User hits specific match channel stream
         cursor.execute("SELECT name FROM channels WHERE id=?", (ch_id,))
         ch_row = cursor.fetchone()
         ch_name = ch_row[0] if ch_row else "Unknown Channel"
@@ -509,7 +563,6 @@ def home():
         site_name=get_setting('site_name'), tg_channel=get_setting('tg_channel'), bg_url=get_setting('bg_url')
     )
 
-# ⭐ Dynamic Tokenized Masking Route (Instant client loading)
 @app.route('/stream/<int:channel_id>')
 def stream_proxy(channel_id):
     if not session.get('tg_joined'):
@@ -524,8 +577,7 @@ def stream_proxy(channel_id):
     if not row:
         return jsonify({"error": "Stream Not Found"}), 404
         
-    actual_api_url = row[0]
-    return jsonify({"stream_url": actual_api_url})
+    return jsonify({"stream_url": row[0]})
 
 @app.route('/bypass-verification')
 def bypass_tg():
@@ -534,21 +586,22 @@ def bypass_tg():
     send_telegram_alert(f"🔓 *Verification Passed!*\nIP: `{ip}` has unlocked the layout gateway successfully.")
     return redirect(url_for('home'))
 
-# --- REAL-TIME TELEGRAM MONITORING INTERCEPT ROUTERS ---
+# --- INTERCEPT & FIREWALL AUTOMATION APIS ---
+
+@app.route('/api/security-auto-ban', methods=['POST'])
+def security_auto_ban():
+    data = request.get_json() or {}
+    ip = data.get('ip', request.headers.get('X-Forwarded-For', request.remote_addr))
+    detail = data.get('detail', 'Unknown proxy layer')
+    
+    ban_user_ip(ip, duration_seconds=300, reason=f"Auto Ban: Detected Proxy/VPN ({detail})")
+    send_telegram_alert(f"🚨 *AUTOMATED INTERCEPT: 5 MINUTE IP BAN!*\nIP: `{ip}`\nReason: *VPN/Proxy Violation*\nDetails: `{detail}`")
+    return jsonify({"banned": True})
 
 @app.route('/api/verify-log', methods=['POST'])
 def verify_log():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     send_telegram_alert(f"🔗 *Telegram Click Track!*\nIP: `{ip}` clicked 'JOIN CHANNEL TO UNLOCK' button.")
-    return jsonify({"logged": True})
-
-@app.route('/api/security-log', methods=['POST'])
-def security_log():
-    data = request.get_json() or {}
-    ip = data.get('ip', request.remote_addr)
-    reason = data.get('reason', 'Security Alert')
-    detail = data.get('detail', 'None')
-    send_telegram_alert(f"🚨 *SECURITY BREACH BLOCKED!*\nIP: `{ip}`\nAction: *{reason}*\nProvider/Org: `{detail}`")
     return jsonify({"logged": True})
 
 @app.route('/api/heartbeat')
@@ -589,13 +642,23 @@ def admin_dashboard():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM channels")
     channels = cursor.fetchall()
+    
+    # Process banned logs with countdown calculation
+    cursor.execute("SELECT ip, ban_until, reason FROM banned_ips")
+    raw_bans = cursor.fetchall()
     conn.close()
+    
+    banned_list = []
+    current_time = time.time()
+    for ip_addr, ban_time, reason in raw_bans:
+        if ban_time > current_time:
+            banned_list.append((ip_addr, int(ban_time - current_time), reason))
     
     return render_template_string(
         ADMIN_HTML, channels=channels, site_name=get_setting('site_name'),
         tg_channel=get_setting('tg_channel'), admin_password=get_setting('admin_password'),
         site_status=get_setting('site_status'), bg_url=get_setting('bg_url'),
-        active_users=active_users, active_count=len(active_users)
+        active_users=active_users, active_count=len(active_users), banned_list=banned_list
     )
 
 @app.route('/admin/login', methods=['POST'])
@@ -621,6 +684,23 @@ def admin_add():
     conn.commit()
     conn.close()
     send_telegram_alert(f"➕ *New Live Server Node Injected!*\nName: {name}\nSource URL: {link}")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/manual-ban', methods=['POST'])
+def admin_manual_ban():
+    if not session.get('admin_logged'): return redirect(url_for('admin_dashboard'))
+    target_ip = request.form.get('ip')
+    duration = int(request.form.get('duration', 300))
+    ban_user_ip(target_ip, duration, "Manually Restricted by Web Admin")
+    send_telegram_alert(f"🚫 *Manual Firewall Block!*\nIP: `{target_ip}` restricted for `{duration}` seconds.")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/manual-unban', methods=['POST'])
+def admin_manual_unban():
+    if not session.get('admin_logged'): return redirect(url_for('admin_dashboard'))
+    target_ip = request.form.get('ip')
+    unban_user_ip(target_ip)
+    send_telegram_alert(f"🔓 *Manual Firewall Release!*\nIP: `{target_ip}` successfully restored to network whitelist.")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/delete/<int:id>')
@@ -661,6 +741,40 @@ def admin_api_users():
 def logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_dashboard'))
+
+# --- TELEGRAM BOT WEBHOOK/POLLING COMMAND HANDLERS ---
+# You can connect your external polling script or use these logic blocks inside a Telegram handler loop:
+def process_bot_command(message_text):
+    # Example parsing logic for admin bots
+    if message_text.startswith('/ip'):
+        target_ip = message_text.replace('/ip', '').strip()
+        if not target_ip: return "Provide an IP address!"
+        try:
+            res = requests.get(f"https://ipapi.co/{target_ip}/json/").json()
+            box = (
+                f"╔════ SPEED_X IP LOOKUP ════╗\n"
+                f" 🌐 IP: {res.get('ip')}\n"
+                f" 🏢 Org: {res.get('org')}\n"
+                f" 🌍 Country: {res.get('country_name')}\n"
+                f" 📍 City: {res.get('city')}\n"
+                f" 🛡️ Proxy/VPN: {res.get('proxy', 'False')}\n"
+                f"╚═══════════════════════════╝"
+            )
+            return box
+        except:
+            return "Failed to fetch remote matrix data info."
+            
+    elif message_text.startswith('/ban_ip'):
+        target_ip = message_text.replace('/ban_ip', '').strip()
+        if not target_ip: return "Specify an IP."
+        ban_user_ip(target_ip, duration_seconds=86400, reason="Banned via Bot Controller")
+        return f"🚫 Target IP `{target_ip}` restricted on web core firewall."
+        
+    elif message_text.startswith('/anban_ip'):
+        target_ip = message_text.replace('/anban_ip', '').strip()
+        if not target_ip: return "Specify an IP."
+        unban_user_ip(target_ip)
+        return f"🔓 Target IP `{target_ip}` released from restrictions."
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
